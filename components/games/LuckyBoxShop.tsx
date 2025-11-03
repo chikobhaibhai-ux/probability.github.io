@@ -3,6 +3,7 @@ import { LuckyBox, LuckyBoxItem, BadgeType } from '../../types';
 import { LUCKY_BOXES } from '../../constants';
 import Button from '../ui/Button';
 import Modal from '../ui/Modal';
+import { playSound } from '../../utils/sounds';
 
 interface LuckyBoxShopProps {
   goBack: () => void;
@@ -42,6 +43,7 @@ const LuckyBoxShop: React.FC<LuckyBoxShopProps> = ({ goBack, currentPoints, upda
     }
 
     setIsOpening(true);
+    playSound('swoosh');
     updatePoints(-box.price);
 
     const rand = Math.random();
@@ -56,6 +58,7 @@ const LuckyBoxShop: React.FC<LuckyBoxShopProps> = ({ goBack, currentPoints, upda
       setResult(wonItem);
       setIsOpening(false);
       setShowActivityResult(true);
+      playSound('win');
       earnBadge(BadgeType.FirstWin);
       if(currentPoints + wonItem.value - box.price > 2000) {
         earnBadge(BadgeType.HighRoller);

@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { BadgeType } from '../types';
 import { BADGE_DEFINITIONS } from '../constants';
+import { toggleMute } from '../utils/sounds';
 
 interface HeaderProps {
   points: number;
@@ -9,6 +10,7 @@ interface HeaderProps {
 
 const Header: React.FC<HeaderProps> = ({ points, badges }) => {
   const [isPointsAnimating, setIsPointsAnimating] = useState(false);
+  const [isMuted, setIsMuted] = useState(false);
   const prevPointsRef = useRef(points);
 
   useEffect(() => {
@@ -19,6 +21,11 @@ const Header: React.FC<HeaderProps> = ({ points, badges }) => {
       return () => clearTimeout(timer);
     }
   }, [points]);
+  
+  const handleMuteToggle = () => {
+    toggleMute();
+    setIsMuted(prev => !prev);
+  };
 
   return (
     <header className="bg-white shadow-md sticky top-0 z-10">
@@ -39,6 +46,9 @@ const Header: React.FC<HeaderProps> = ({ points, badges }) => {
                 </div>
               ))}
             </div>
+            <button onClick={handleMuteToggle} className="p-2 rounded-full hover:bg-gray-200 transition-colors" aria-label={isMuted ? 'Unmute sounds' : 'Mute sounds'}>
+              <span className="text-2xl">{isMuted ? '🔇' : '🔊'}</span>
+            </button>
             <div className={`bg-indigo-100 text-indigo-700 font-bold py-2 px-4 rounded-full transition-all ${isPointsAnimating ? 'animate-pulse-once' : ''}`}>
               {points.toLocaleString()} PP
             </div>

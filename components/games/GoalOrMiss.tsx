@@ -3,6 +3,7 @@ import { BadgeType, GoalTarget } from '../../types';
 import { GOAL_TARGETS } from '../../constants';
 import Button from '../ui/Button';
 import Modal from '../ui/Modal';
+import { playSound } from '../../utils/sounds';
 
 interface GoalOrMissProps {
   goBack: () => void;
@@ -29,14 +30,20 @@ const GoalOrMiss: React.FC<GoalOrMissProps> = ({ goBack, updatePoints, earnBadge
     if (!selectedTarget) return;
 
     setGameState('shooting');
+    playSound('swoosh');
     const isGoal = Math.random() < selectedTarget.probability;
 
     setTimeout(() => {
       const pointsChange = isGoal ? selectedTarget.reward : selectedTarget.penalty;
       updatePoints(pointsChange);
 
-      if (isGoal && (selectedTarget.id === 'top-left' || selectedTarget.id === 'top-right')) {
-        earnBadge(BadgeType.GoldenBoot);
+      if (isGoal) {
+        playSound('win');
+        if (selectedTarget.id === 'top-left' || selectedTarget.id === 'top-right') {
+          earnBadge(BadgeType.GoldenBoot);
+        }
+      } else {
+        playSound('thud');
       }
       
       setResult({ outcome: isGoal ? 'goal' : 'miss', points: pointsChange });

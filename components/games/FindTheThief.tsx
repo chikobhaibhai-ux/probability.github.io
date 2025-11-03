@@ -3,6 +3,7 @@ import { BadgeType, GameCase, Suspect, Clue } from '../../types';
 import { GAME_CASES } from '../../constants';
 import Button from '../ui/Button';
 import Modal from '../ui/Modal';
+import { playSound } from '../../utils/sounds';
 
 interface FindTheThiefProps {
   goBack: () => void;
@@ -22,32 +23,60 @@ const FindTheThief: React.FC<FindTheThiefProps> = ({ goBack, updatePoints, earnB
     const [showLearnMode, setShowLearnMode] = useState(false);
     const [result, setResult] = useState<{correct: boolean, guilty: Suspect} | null>(null);
 
-    const startGame = () => {
-        const initialProb = 1 / currentCase.suspects.length;
-        setSuspects(currentCase.suspects.map(s => ({ ...s, probability: initialProb })));
+    const startGame = useCallback(() => {
+        playSound('click');
+        // Deep copy the case to avoid mutating the constant
+        const newCase: GameCase = JSON.parse(JSON.stringify(GAME_CASES[0]));
+
+        // Randomly select a new guilty suspect
+        const guiltyIndex = Math.floor(Math.random() * newCase.suspects.length);
+        const guiltySuspect = newCase.suspects[guiltyIndex];
+        newCase.guiltySuspectId = guiltySuspect.id;
+
+        // Update clues to be consistent with the new culprit's attributes
+        newCase.clues.forEach((clue) => {
+            if (guiltySuspect.attributes.hasOwnProperty(clue.attribute)) {
+                clue.expectedValue = guiltySuspect.attributes[clue.attribute];
+            }
+        });
+        
+        setCurrentCase(newCase);
+
+        const initialProb = 1 / newCase.suspects.length;
+        setSuspects(newCase.suspects.map(s => ({ ...s, probability: initialProb })));
         setRevealedClues([]);
         setResult(null);
         setGameState('playing');
-    };
+    }, []);
 
     const revealNextClue = useCallback(() => {
         if (revealedClues.length >= currentCase.clues.length) return;
 
+        playSound('click');
         const nextClue = currentCase.clues[revealedClues.length];
         setRevealedClues(prev => [...prev, nextClue]);
 
         setSuspects(prevSuspects => {
-            const matchingSuspects = prevSuspects.filter(s => s.attributes[nextClue.attribute] === nextClue.expectedValue);
+            // Find suspects who match the new clue
+            const matchingSuspects = prevSuspects.filter(s => {
+                const suspectValue = s.attributes[nextClue.attribute];
+                return suspectValue === nextClue.expectedValue;
+            });
             
+            // Calculate the total probability of all matching suspects before this update
             const totalMatchingProb = matchingSuspects.reduce((sum, s) => sum + s.probability, 0);
 
-            if (totalMatchingProb === 0) return prevSuspects; // Failsafe
+            // If no suspects match (which shouldn't happen with correct clues), do nothing
+            if (totalMatchingProb === 0) return prevSuspects; 
 
+            // Update probabilities using Bayes' theorem concept
             return prevSuspects.map(s => {
                 const matches = s.attributes[nextClue.attribute] === nextClue.expectedValue;
                 if (matches) {
+                    // This suspect's probability increases
                     return { ...s, probability: s.probability / totalMatchingProb };
                 } else {
+                    // This suspect is eliminated (probability becomes 0)
                     return { ...s, probability: 0 };
                 }
             });
@@ -59,9 +88,11 @@ const FindTheThief: React.FC<FindTheThiefProps> = ({ goBack, updatePoints, earnB
         const isCorrect = accusedSuspect.id === currentCase.guiltySuspectId;
 
         if (isCorrect) {
+            playSound('success');
             updatePoints(250);
             earnBadge(BadgeType.MasterDetective);
         } else {
+            playSound('failure');
             updatePoints(-50);
         }
         
@@ -74,8 +105,8 @@ const FindTheThief: React.FC<FindTheThiefProps> = ({ goBack, updatePoints, earnB
     const renderIntro = () => (
         <div className="text-center bg-white p-8 rounded-lg shadow-lg max-w-2xl mx-auto">
             <span className="text-6xl mb-4 block">📜</span>
-            <h2 className="text-3xl font-bold text-gray-800 mb-2">{currentCase.title}</h2>
-            <p className="text-gray-600 mb-6">{currentCase.story}</p>
+            <h2 className="text-3xl font-bold text-gray-800 mb-2">{GAME_CASES[0].title}</h2>
+            <p className="text-gray-600 mb-6">{GAME_CASES[0].story}</p>
             <Button onClick={startGame}>Start Investigation</Button>
         </div>
     );
@@ -139,7 +170,7 @@ const FindTheThief: React.FC<FindTheThiefProps> = ({ goBack, updatePoints, earnB
             </div>
 
             {gameState === 'intro' && renderIntro()}
-            {gameState === 'playing' && renderGame()}
+            {(gameState === 'playing' || gameState === 'revealed') && renderGame()}
 
             <Modal isOpen={gameState === 'revealed'} onClose={startGame} title="The Verdict is In!">
                 {result && (

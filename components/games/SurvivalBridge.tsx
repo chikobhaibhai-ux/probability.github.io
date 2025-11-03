@@ -3,6 +3,7 @@ import { BadgeType } from '../../types';
 import Button from '../ui/Button';
 import Modal from '../ui/Modal';
 import { TOTAL_ADVENTURERS, SURVIVAL_BRIDGE_CONFIG } from '../../constants';
+import { playSound } from '../../utils/sounds';
 
 interface SurvivalBridgeProps {
   goBack: () => void;
@@ -24,6 +25,7 @@ const SurvivalBridge: React.FC<SurvivalBridgeProps> = ({ goBack, updatePoints, e
 
     const handleSendAcross = () => {
         setGameState('crossing');
+        playSound('swoosh');
         const isSuccess = Math.random() < config.probability;
 
         setTimeout(() => {
@@ -31,6 +33,7 @@ const SurvivalBridge: React.FC<SurvivalBridgeProps> = ({ goBack, updatePoints, e
             updatePoints(pointsChange);
 
             if (isSuccess) {
+                playSound('success');
                 if (selectedCount === TOTAL_ADVENTURERS) {
                     earnBadge(BadgeType.BridgeMaster);
                 }
@@ -44,6 +47,7 @@ const SurvivalBridge: React.FC<SurvivalBridgeProps> = ({ goBack, updatePoints, e
                 }
                 setAdventurers(newAdventurers);
             } else {
+                 playSound('failure');
                  const newAdventurers = [...adventurers];
                 let toMakeLost = selectedCount;
                 for(let i=0; i<newAdventurers.length; i++) {
