@@ -32,11 +32,13 @@ const AiCoach: React.FC<AiCoachProps> = ({ goBack }) => {
         setApiKeyStatus('checking');
 
         try {
-            const hasKey = skipKeyCheck || await window.aistudio.hasSelectedApiKey();
-            if (!hasKey) {
-                setApiKeyStatus('missing');
-                isInitializing.current = false;
-                return;
+            if (!skipKeyCheck) {
+                const hasKey = await window.aistudio.hasSelectedApiKey();
+                if (!hasKey) {
+                    setApiKeyStatus('missing');
+                    isInitializing.current = false;
+                    return;
+                }
             }
             
             const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
@@ -61,16 +63,19 @@ const AiCoach: React.FC<AiCoachProps> = ({ goBack }) => {
     }, []);
 
     useEffect(() => {
+        // On initial load, perform the key check.
         initializeChat(false);
     }, [initializeChat]);
 
     const handleSelectKey = async () => {
         try {
             await window.aistudio.openSelectKey();
-            // After selection, assume success and skip the potentially slow key check
-            await initializeChat(true);
+            // After the dialog closes, we assume the user selected a key.
+            // We skip the `hasSelectedApiKey` check to avoid the race condition.
+            initializeChat(true);
         } catch (error) {
             console.error('API key selection dialog was cancelled or failed.', error);
+            setApiKeyStatus('missing');
         }
     };
 
@@ -92,8 +97,12 @@ const AiCoach: React.FC<AiCoachProps> = ({ goBack }) => {
                 const chunkText = chunk.text;
                 setMessages(prev => {
                     const newMessages = [...prev];
-                    const lastMessage = newMessages[newMessages.length - 1];
-                    lastMessage.content += chunkText;
+                    const lastMessageIndex = newMessages.length - 1;
+                    const updatedLastMessage = {
+                        ...newMessages[lastMessageIndex],
+                        content: newMessages[lastMessageIndex].content + chunkText,
+                    };
+                    newMessages[lastMessageIndex] = updatedLastMessage;
                     return newMessages;
                 });
             }
@@ -106,7 +115,14 @@ const AiCoach: React.FC<AiCoachProps> = ({ goBack }) => {
             } else {
                 setMessages(prev => {
                     const newMessages = [...prev];
-                    newMessages[newMessages.length - 1].content = 'Oops! Something went wrong. Please try again.';
+                    const lastMessageIndex = newMessages.length - 1;
+                    if(newMessages[lastMessageIndex]?.role === 'model') {
+                        const updatedLastMessage = {
+                          ...newMessages[lastMessageIndex],
+                          content: 'Oops! Something went wrong. Please try again.'
+                        };
+                        newMessages[lastMessageIndex] = updatedLastMessage;
+                    }
                     return newMessages;
                 });
             }
