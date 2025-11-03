@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { GoogleGenAI, Chat } from '@google/genai';
 import Button from '../ui/Button';
 
@@ -18,6 +18,7 @@ const AiCoach: React.FC<AiCoachProps> = ({ goBack }) => {
     const [inputValue, setInputValue] = useState('');
     const [isLoading, setIsLoading] = useState(false); // For message sending
     const messagesEndRef = useRef<HTMLDivElement>(null);
+    const isInitializing = useRef(false);
 
     const scrollToBottom = () => {
         messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -25,10 +26,19 @@ const AiCoach: React.FC<AiCoachProps> = ({ goBack }) => {
 
     useEffect(scrollToBottom, [messages]);
 
-    const initializeChat = async () => {
-        setIsLoading(true);
+    const checkAndInitialize = useCallback(async () => {
+        if (isInitializing.current) return;
+        isInitializing.current = true;
+        setApiKeyStatus('checking');
+
         try {
-            // The API key is injected into process.env.API_KEY by the environment
+            const hasKey = await window.aistudio.hasSelectedApiKey();
+            if (!hasKey) {
+                setApiKeyStatus('missing');
+                isInitializing.current = false;
+                return;
+            }
+            
             const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
             const newChat = ai.chats.create({
                 model: 'gemini-2.5-flash',
@@ -36,6 +46,7 @@ const AiCoach: React.FC<AiCoachProps> = ({ goBack }) => {
                     systemInstruction: "You are a friendly and encouraging probability coach named 'Pro-Bot'. Your goal is to explain probability concepts to middle school students in a simple, fun, and engaging way. Use analogies, simple examples, and avoid overly technical jargon. When asked for a problem, create a short, clear problem with a multiple-choice answer, and then explain the solution step-by-step after the user has had a chance to think. Keep your responses concise and easy to read. Use markdown for lists and bolding.",
                 },
             });
+
             setChat(newChat);
             setMessages([{ role: 'model', content: "Hi! I'm Pro-Bot. Ask me anything about probability!" }]);
             setApiKeyStatus('ready');
@@ -43,31 +54,22 @@ const AiCoach: React.FC<AiCoachProps> = ({ goBack }) => {
             console.error("Failed to initialize AI Chat:", error);
             setApiKeyStatus('missing');
             setMessages([]);
+            setChat(null);
         } finally {
-            setIsLoading(false);
+            isInitializing.current = false;
         }
-    };
+    }, []);
 
     useEffect(() => {
-        const checkApiKey = async () => {
-            if (await window.aistudio.hasSelectedApiKey()) {
-                await initializeChat();
-            } else {
-                setApiKeyStatus('missing');
-            }
-        };
-        checkApiKey();
-    }, []);
+        checkAndInitialize();
+    }, [checkAndInitialize]);
 
     const handleSelectKey = async () => {
         try {
             await window.aistudio.openSelectKey();
-            // After the user interacts with the dialog, assume a key is selected
-            // and attempt to initialize the chat.
-            await initializeChat();
+            await checkAndInitialize();
         } catch (error) {
             console.error('API key selection dialog was cancelled or failed.', error);
-            // Remain in the 'missing' state.
         }
     };
 
