@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { GoogleGenAI, Chat } from '@google/genai';
 import Button from '../ui/Button';
@@ -9,7 +10,6 @@ interface Message {
 
 type KeyStatus = 'checking' | 'needed' | 'ready' | 'error';
 
-// Fix: Define the AiCoachProps interface.
 interface AiCoachProps {
     goBack: () => void;
 }
@@ -36,6 +36,7 @@ const AiCoach: React.FC<AiCoachProps> = ({ goBack }) => {
         setMessages([]);
 
         try {
+            // A new instance is created to ensure the latest key is used.
             const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
             const newChat = ai.chats.create({
                 model: 'gemini-2.5-flash',
@@ -49,37 +50,52 @@ const AiCoach: React.FC<AiCoachProps> = ({ goBack }) => {
         } catch (error: any) {
             console.error("Failed to initialize AI Chat:", error);
             setChat(null);
-            setKeyStatus('needed');
-            if (error.message.includes('API key not valid') || error.message.includes('permission')) {
+            setKeyStatus('needed'); // Allow user to try again
+            if (error.message.includes('API key not valid') || error.message.includes('permission') || error.message.includes('not found')) {
                 setKeyError('The selected API key is not valid or lacks permissions. Please choose a different key.');
             } else {
-                setKeyError('An unexpected error occurred. Please try selecting your key again.');
+                setKeyError('An unexpected error occurred during initialization. Please try selecting your key again.');
             }
         } finally {
             setIsInitializing(false);
         }
     }, []);
-
+    
     useEffect(() => {
         const checkApiKey = async () => {
             setKeyStatus('checking');
             setKeyError(null);
-            try {
-                // Wait a moment to ensure the aistudio object is available
+
+            // Poll for the aistudio SDK to ensure it's loaded.
+            let attempts = 0;
+            const maxAttempts = 50; // Try for 5 seconds
+            while (!window.aistudio && attempts < maxAttempts) {
                 await new Promise(resolve => setTimeout(resolve, 100));
+                attempts++;
+            }
+
+            if (!window.aistudio || typeof window.aistudio.hasSelectedApiKey !== 'function') {
+                console.error('AI Studio SDK not found or is invalid after waiting.');
+                setKeyStatus('error');
+                setKeyError('Could not connect to the API key service. Please reload the page to try again.');
+                return;
+            }
+
+            try {
                 if (await window.aistudio.hasSelectedApiKey()) {
                     setKeyStatus('ready');
                 } else {
                     setKeyStatus('needed');
                 }
             } catch (e) {
-                console.error("Error checking for API key:", e);
+                console.error("Error during hasSelectedApiKey check:", e);
                 setKeyStatus('error');
                 setKeyError('Could not check for an API key. Please try reloading.');
             }
         };
         checkApiKey();
     }, []);
+
 
     useEffect(() => {
         if (keyStatus === 'ready' && !chat && !isInitializing) {
