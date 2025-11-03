@@ -2,33 +2,40 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { GoogleGenAI, Chat } from '@google/genai';
 import Button from '../ui/Button';
 
-interface AiCoachProps {
-  goBack: () => void;
-}
-
 interface Message {
     role: 'user' | 'model';
     content: string;
 }
 
+type KeyStatus = 'checking' | 'needed' | 'ready' | 'error';
+
+// Fix: Define the AiCoachProps interface.
+interface AiCoachProps {
+    goBack: () => void;
+}
+
 const AiCoach: React.FC<AiCoachProps> = ({ goBack }) => {
+    const [keyStatus, setKeyStatus] = useState<KeyStatus>('checking');
+    const [isInitializing, setIsInitializing] = useState(false);
+    const [keyError, setKeyError] = useState<string | null>(null);
+
     const [chat, setChat] = useState<Chat | null>(null);
     const [messages, setMessages] = useState<Message[]>([]);
     const [inputValue, setInputValue] = useState('');
-    const [isLoading, setIsLoading] = useState(false);
+    const [isStreaming, setIsStreaming] = useState(false);
     const messagesEndRef = useRef<HTMLDivElement>(null);
 
     const scrollToBottom = () => {
         messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
     }
-
     useEffect(scrollToBottom, [messages]);
 
     const initializeChat = useCallback(async () => {
-        setIsLoading(true);
+        setIsInitializing(true);
+        setKeyError(null);
+        setMessages([]);
+
         try {
-            // Attempt to initialize the chat immediately.
-            // This assumes the API key is available in the environment.
             const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
             const newChat = ai.chats.create({
                 model: 'gemini-2.5-flash',
@@ -39,45 +46,78 @@ const AiCoach: React.FC<AiCoachProps> = ({ goBack }) => {
 
             setChat(newChat);
             setMessages([{ role: 'model', content: "Hi! I'm Pro-Bot. Ask me anything about probability!" }]);
-        } catch (error) {
+        } catch (error: any) {
             console.error("Failed to initialize AI Chat:", error);
-            // If initialization fails, show an error message in the chat window.
-            setMessages([{ role: 'model', content: "Sorry, the AI Coach couldn't be started. This might be because an API key isn't configured for this environment." }]);
             setChat(null);
+            setKeyStatus('needed');
+            if (error.message.includes('API key not valid') || error.message.includes('permission')) {
+                setKeyError('The selected API key is not valid or lacks permissions. Please choose a different key.');
+            } else {
+                setKeyError('An unexpected error occurred. Please try selecting your key again.');
+            }
         } finally {
-            setIsLoading(false);
+            setIsInitializing(false);
         }
     }, []);
 
     useEffect(() => {
-        initializeChat();
-    }, [initializeChat]);
+        const checkApiKey = async () => {
+            setKeyStatus('checking');
+            setKeyError(null);
+            try {
+                // Wait a moment to ensure the aistudio object is available
+                await new Promise(resolve => setTimeout(resolve, 100));
+                if (await window.aistudio.hasSelectedApiKey()) {
+                    setKeyStatus('ready');
+                } else {
+                    setKeyStatus('needed');
+                }
+            } catch (e) {
+                console.error("Error checking for API key:", e);
+                setKeyStatus('error');
+                setKeyError('Could not check for an API key. Please try reloading.');
+            }
+        };
+        checkApiKey();
+    }, []);
+
+    useEffect(() => {
+        if (keyStatus === 'ready' && !chat && !isInitializing) {
+            initializeChat();
+        }
+    }, [keyStatus, chat, isInitializing, initializeChat]);
+
+    const handleSelectKey = async () => {
+        try {
+            await window.aistudio.openSelectKey();
+            // Assume success and let the useEffect hook handle initialization
+            setKeyStatus('ready');
+        } catch (e) {
+            console.error("Could not open API key dialog:", e);
+            setKeyError('The API key selection dialog could not be opened.');
+            setKeyStatus('needed');
+        }
+    };
 
     const handleSendMessage = async (e: React.FormEvent) => {
         e.preventDefault();
-        if (!inputValue.trim() || !chat || isLoading) return;
+        if (!inputValue.trim() || !chat || isStreaming) return;
 
-        const userMessageContent = inputValue;
-        const userMessage: Message = { role: 'user', content: userMessageContent };
-        
-        // Add user message and a placeholder for the model's response
+        const userMessage: Message = { role: 'user', content: inputValue };
         setMessages(prev => [...prev, userMessage, { role: 'model', content: '' }]);
+        const messageToSend = inputValue;
         setInputValue('');
-        setIsLoading(true);
+        setIsStreaming(true);
 
         try {
-            const stream = await chat.sendMessageStream({ message: userMessageContent });
-            
+            const stream = await chat.sendMessageStream({ message: messageToSend });
             for await (const chunk of stream) {
                 const chunkText = chunk.text;
                 setMessages(prev => {
                     const newMessages = [...prev];
-                    const lastMessageIndex = newMessages.length - 1;
-                    const lastMessage = newMessages[lastMessageIndex];
-                    
-                    if (lastMessage && lastMessage.role === 'model') {
-                        // Create a new message object to ensure immutability
-                        newMessages[lastMessageIndex] = { ...lastMessage, content: lastMessage.content + chunkText };
+                    const lastMessage = newMessages[newMessages.length - 1];
+                    if (lastMessage?.role === 'model') {
+                        newMessages[newMessages.length - 1] = { ...lastMessage, content: lastMessage.content + chunkText };
                     }
                     return newMessages;
                 });
@@ -87,18 +127,96 @@ const AiCoach: React.FC<AiCoachProps> = ({ goBack }) => {
             const errorMessage = 'Oops! Something went wrong. Please try again.';
             setMessages(prev => {
                 const newMessages = [...prev];
-                const lastMessageIndex = newMessages.length - 1;
-                const lastMessage = newMessages[lastMessageIndex];
-                
-                if (lastMessage && lastMessage.role === 'model' && lastMessage.content === '') {
-                     newMessages[lastMessageIndex] = { ...lastMessage, content: errorMessage };
+                const lastMessage = newMessages[newMessages.length - 1];
+                if (lastMessage?.role === 'model' && lastMessage.content === '') {
+                     newMessages[newMessages.length - 1] = { ...lastMessage, content: errorMessage };
                      return newMessages;
                 }
-                
-                return [...newMessages, {role: 'model', content: errorMessage}];
+                return [...newMessages, { role: 'model', content: errorMessage }];
             });
         } finally {
-            setIsLoading(false);
+            setIsStreaming(false);
+        }
+    };
+    
+    const renderActionRequired = () => (
+        <div className="flex flex-col items-center justify-center h-full p-8 text-center">
+            <div className="bg-orange-100 border-l-4 border-orange-500 text-orange-700 p-4 rounded-md mb-6 w-full max-w-md" role="alert">
+                <p className="font-bold">Action Required</p>
+                <p>To use the AI Coach, you need to select a Gemini API key.</p>
+            </div>
+            {keyError && (
+                <p className="text-red-500 mb-4 animate-shake">{keyError}</p>
+            )}
+            <Button onClick={handleSelectKey}>
+                Select API Key
+            </Button>
+            <p className="text-xs text-gray-500 mt-4 max-w-xs">
+               This will open a dialog to choose your API key. For more information, see the <a href="https://ai.google.dev/gemini-api/docs/billing" target="_blank" rel="noopener noreferrer" className="underline hover:text-indigo-600">billing documentation</a>.
+            </p>
+        </div>
+    );
+    
+    const renderChatInterface = () => (
+         <>
+            <div className="flex-1 p-6 overflow-y-auto">
+                {isInitializing ? (
+                    <div className="flex items-center justify-center h-full">
+                        <p className="text-gray-500 animate-pulse">Connecting to the AI Coach...</p>
+                    </div>
+                ) : (
+                    messages.map((msg, index) => (
+                        <div key={index} className={`flex items-start gap-3 my-4 ${msg.role === 'user' ? 'justify-end' : ''}`}>
+                            {msg.role === 'model' && <span className="text-2xl flex-shrink-0">🤖</span>}
+                            <div className={`p-3 rounded-lg max-w-lg ${msg.role === 'user' ? 'bg-indigo-500 text-white' : 'bg-gray-200 text-gray-800'}`}>
+                                <div className="prose">{msg.content}</div>
+                                {isStreaming && msg.role === 'model' && index === messages.length - 1 && (
+                                    <span className="inline-block w-2 h-4 bg-gray-600 animate-pulse ml-1"></span>
+                                )}
+                            </div>
+                        </div>
+                    ))
+                )}
+                <div ref={messagesEndRef} />
+            </div>
+            <div className="p-4 border-t border-gray-200 bg-gray-50 rounded-b-lg">
+                <form onSubmit={handleSendMessage} className="flex items-center gap-4">
+                    <input
+                        type="text"
+                        value={inputValue}
+                        onChange={(e) => setInputValue(e.target.value)}
+                        placeholder={chat && !isInitializing ? "Ask a probability question..." : "AI Coach is unavailable"}
+                        className="flex-1 p-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                        disabled={!chat || isStreaming || isInitializing}
+                        aria-label="Chat input"
+                    />
+                    <Button type="submit" disabled={!chat || isStreaming || !inputValue.trim() || isInitializing}>
+                        Send
+                    </Button>
+                </form>
+            </div>
+        </>
+    );
+
+    const renderContent = () => {
+        switch (keyStatus) {
+            case 'checking':
+                return (
+                    <div className="flex items-center justify-center h-full">
+                        <p className="text-gray-500 animate-pulse">Checking for API Key...</p>
+                    </div>
+                );
+            case 'needed':
+                return renderActionRequired();
+            case 'ready':
+                return renderChatInterface();
+            case 'error':
+            default:
+                return (
+                    <div className="flex items-center justify-center h-full text-center p-4">
+                        <p className="text-red-500">{keyError || 'An unknown error occurred.'}</p>
+                    </div>
+                );
         }
     };
 
@@ -111,39 +229,7 @@ const AiCoach: React.FC<AiCoachProps> = ({ goBack }) => {
             </div>
 
             <div className="bg-white rounded-lg shadow-xl max-w-3xl mx-auto flex flex-col" style={{height: '60vh'}}>
-                <div className="flex-1 p-6 overflow-y-auto">
-                    {messages.map((msg, index) => (
-                        <div key={index} className={`flex items-start gap-3 my-4 ${msg.role === 'user' ? 'justify-end' : ''}`}>
-                                {msg.role === 'model' && <span className="text-2xl flex-shrink-0">🤖</span>}
-                            <div className={`p-3 rounded-lg max-w-lg ${msg.role === 'user' ? 'bg-indigo-500 text-white' : 'bg-gray-200 text-gray-800'}`}>
-                                <div className="prose">{msg.content}</div>
-                                {isLoading && msg.role === 'model' && index === messages.length - 1 && msg.content === '' && (
-                                    <span className="inline-block w-2 h-4 bg-gray-600 animate-pulse ml-1"></span>
-                                )}
-                            </div>
-                        </div>
-                    ))}
-                    {isLoading && messages.length === 0 && (
-                         <div className="text-center text-gray-500 p-4">Connecting to the AI Coach...</div>
-                    )}
-                    <div ref={messagesEndRef} />
-                </div>
-                <div className="p-4 border-t border-gray-200 bg-gray-50 rounded-b-lg">
-                    <form onSubmit={handleSendMessage} className="flex items-center gap-4">
-                        <input
-                            type="text"
-                            value={inputValue}
-                            onChange={(e) => setInputValue(e.target.value)}
-                            placeholder={chat ? "Ask a probability question..." : "AI is not available"}
-                            className="flex-1 p-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                            disabled={!chat || isLoading}
-                            aria-label="Chat input"
-                        />
-                        <Button type="submit" disabled={!chat || isLoading || !inputValue.trim()}>
-                            Send
-                        </Button>
-                    </form>
-                </div>
+                {renderContent()}
             </div>
         </div>
     );
