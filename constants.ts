@@ -99,13 +99,25 @@ export const GAME_CASES: GameCase[] = [
             { id: 'chef', name: 'Chef Usman', avatar: '👨‍🍳', attributes: { hasKitchenAccess: true, hasCrumbs: false, motive: 'rivalry' }},
             { id: 'butler', name: 'Ramzan the Butler', avatar: '🤵', attributes: { hasKitchenAccess: true, hasCrumbs: true, motive: 'hunger' }},
             { id: 'gardener', name: 'Shama', avatar: '👩‍🌾', attributes: { hasKitchenAccess: false, hasCrumbs: false, motive: 'revenge' }},
-            { id: 'maid', name: 'Wishal the maid', avatar: '🧹', attributes: { hasKitchenAccess: true, hasCrumbs: true, motive: 'hunger' }},
+            { id: 'maid', name: 'Wishal the maid', avatar: '🧹', attributes: { hasKitchenAccess: true, hasCrumbs: true, motive: 'distraction' }},
             { id: 'countess', name: 'Ramisha', avatar: '👑', attributes: { hasKitchenAccess: false, hasCrumbs: false, motive: 'sabotage' }},
         ],
         clues: [
-            { id: 1, text: 'A witness confirms the thief had access to the kitchen.', attribute: 'hasKitchenAccess', expectedValue: true },
-            { id: 2, text: 'Forensics found cake crumbs on the culprit\'s uniform.', attribute: 'hasCrumbs', expectedValue: true },
-            { id: 3, text: 'The thief was heard complaining about being hungry all morning.', attribute: 'motive', expectedValue: 'hunger' },
+            { id: 1, attribute: 'hasKitchenAccess', texts: {
+                'true': 'A witness confirms the thief had access to the kitchen.',
+                'false': 'Security footage shows the thief did not enter the kitchen.'
+            }},
+            { id: 2, attribute: 'hasCrumbs', texts: {
+                'true': 'Forensics found cake crumbs on the culprit\'s uniform.',
+                'false': 'The culprit was surprisingly clean, with no crumbs found on them.'
+            }},
+            { id: 3, attribute: 'motive', texts: {
+                'hunger': 'The thief was heard complaining about being hungry all morning.',
+                'rivalry': 'The culprit has a history of professional jealousy with the head chef.',
+                'revenge': 'The suspect was recently reprimanded and was heard vowing revenge.',
+                'sabotage': 'A source says the suspect wanted to sabotage the bake-off to make the host look bad.',
+                'distraction': 'The thief seemed to be creating a diversion to cover up another mistake.'
+            }},
         ]
     }
 ];

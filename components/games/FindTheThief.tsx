@@ -1,5 +1,6 @@
-import React, { useState, useMemo, useCallback } from 'react';
-import { BadgeType, GameCase, Suspect, Clue } from '../../types';
+
+import React, { useState, useCallback } from 'react';
+import { BadgeType, GameCase, Suspect, Clue, ClueTemplate } from '../../types';
 import { GAME_CASES } from '../../constants';
 import Button from '../ui/Button';
 import Modal from '../ui/Modal';
@@ -18,6 +19,7 @@ interface SuspectWithProb extends Suspect {
 const FindTheThief: React.FC<FindTheThiefProps> = ({ goBack, updatePoints, earnBadge }) => {
     const [gameState, setGameState] = useState<'intro' | 'playing' | 'revealed'>('intro');
     const [currentCase, setCurrentCase] = useState<GameCase>(GAME_CASES[0]);
+    const [gameClues, setGameClues] = useState<Clue[]>([]);
     const [suspects, setSuspects] = useState<SuspectWithProb[]>([]);
     const [revealedClues, setRevealedClues] = useState<Clue[]>([]);
     const [showLearnMode, setShowLearnMode] = useState(false);
@@ -26,34 +28,40 @@ const FindTheThief: React.FC<FindTheThiefProps> = ({ goBack, updatePoints, earnB
     const startGame = useCallback(() => {
         playSound('click');
         // Deep copy the case to avoid mutating the constant
-        const newCase: GameCase = JSON.parse(JSON.stringify(GAME_CASES[0]));
+        const newCaseTemplate: GameCase = JSON.parse(JSON.stringify(GAME_CASES[0]));
 
         // Randomly select a new guilty suspect
-        const guiltyIndex = Math.floor(Math.random() * newCase.suspects.length);
-        const guiltySuspect = newCase.suspects[guiltyIndex];
-        newCase.guiltySuspectId = guiltySuspect.id;
+        const guiltyIndex = Math.floor(Math.random() * newCaseTemplate.suspects.length);
+        const guiltySuspect = newCaseTemplate.suspects[guiltyIndex];
+        newCaseTemplate.guiltySuspectId = guiltySuspect.id;
 
-        // Update clues to be consistent with the new culprit's attributes
-        newCase.clues.forEach((clue) => {
-            if (guiltySuspect.attributes.hasOwnProperty(clue.attribute)) {
-                clue.expectedValue = guiltySuspect.attributes[clue.attribute];
-            }
+        // Dynamically generate the clues for this game round
+        const preparedClues: Clue[] = newCaseTemplate.clues.map((clueTemplate: ClueTemplate) => {
+            const expectedValue = guiltySuspect.attributes[clueTemplate.attribute];
+            const clueText = clueTemplate.texts[String(expectedValue)];
+            return {
+                id: clueTemplate.id,
+                text: clueText,
+                attribute: clueTemplate.attribute,
+                expectedValue: expectedValue,
+            };
         });
         
-        setCurrentCase(newCase);
+        setCurrentCase(newCaseTemplate);
+        setGameClues(preparedClues);
 
-        const initialProb = 1 / newCase.suspects.length;
-        setSuspects(newCase.suspects.map(s => ({ ...s, probability: initialProb })));
+        const initialProb = 1 / newCaseTemplate.suspects.length;
+        setSuspects(newCaseTemplate.suspects.map(s => ({ ...s, probability: initialProb })));
         setRevealedClues([]);
         setResult(null);
         setGameState('playing');
     }, []);
 
     const revealNextClue = useCallback(() => {
-        if (revealedClues.length >= currentCase.clues.length) return;
+        if (revealedClues.length >= gameClues.length) return;
 
         playSound('click');
-        const nextClue = currentCase.clues[revealedClues.length];
+        const nextClue = gameClues[revealedClues.length];
         setRevealedClues(prev => [...prev, nextClue]);
 
         setSuspects(prevSuspects => {
@@ -81,7 +89,7 @@ const FindTheThief: React.FC<FindTheThiefProps> = ({ goBack, updatePoints, earnB
                 }
             });
         });
-    }, [revealedClues, currentCase]);
+    }, [revealedClues, gameClues]);
 
     const makeAccusation = (accusedSuspect: SuspectWithProb) => {
         const guiltySuspect = suspects.find(s => s.id === currentCase.guiltySuspectId)!;
@@ -100,7 +108,7 @@ const FindTheThief: React.FC<FindTheThiefProps> = ({ goBack, updatePoints, earnB
         setGameState('revealed');
     };
 
-    const isAccusationTime = revealedClues.length === currentCase.clues.length;
+    const isAccusationTime = revealedClues.length === gameClues.length;
 
     const renderIntro = () => (
         <div className="text-center bg-white p-8 rounded-lg shadow-lg max-w-2xl mx-auto">
@@ -111,53 +119,65 @@ const FindTheThief: React.FC<FindTheThiefProps> = ({ goBack, updatePoints, earnB
         </div>
     );
     
-    const renderGame = () => (
-      <div className="flex flex-col lg:flex-row gap-8">
-            <div className="lg:w-1/3 bg-white p-6 rounded-lg shadow-md">
-                <h3 className="font-bold text-xl mb-4 border-b pb-2">Clues</h3>
-                <ul className="space-y-3">
-                    {revealedClues.map(clue => (
-                        <li key={clue.id} className="text-gray-700 animate-fade-in-down">🕵️‍♂️ {clue.text}</li>
-                    ))}
-                    {revealedClues.length < currentCase.clues.length && (
-                      <li className="text-gray-400">Next clue is waiting...</li>
-                    )}
-                </ul>
-                <div className="mt-6">
-                     <Button onClick={revealNextClue} disabled={isAccusationTime}>
-                        Reveal Next Clue
-                     </Button>
-                </div>
-            </div>
-            <div className="lg:w-2/3">
-                <h3 className="font-bold text-xl mb-4">{isAccusationTime ? 'Make Your Accusation!' : 'The Suspects'}</h3>
-                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    {suspects.map(s => (
-                        <div 
-                            key={s.id} 
-                            onClick={isAccusationTime ? () => makeAccusation(s) : undefined}
-                            className={`bg-white p-4 rounded-lg shadow-md transition-all duration-300 ${isAccusationTime ? 'cursor-pointer hover:shadow-xl hover:ring-2 hover:ring-red-500' : ''}`}
-                        >
-                            <div className="flex items-center space-x-4">
-                                <span className="text-4xl">{s.avatar}</span>
-                                <div>
-                                    <h4 className="font-bold">{s.name}</h4>
-                                    <p className="text-sm text-gray-500">Likelihood of Guilt</p>
-                                </div>
-                            </div>
-                            <div className="w-full bg-gray-200 rounded-full h-4 mt-3">
-                                <div 
-                                    className="bg-blue-500 h-4 rounded-full transition-all duration-1000 ease-out" 
-                                    style={{ width: `${s.probability * 100}%` }}
-                                ></div>
-                            </div>
-                            <p className="text-right text-sm font-bold mt-1">{(s.probability * 100).toFixed(1)}%</p>
-                        </div>
-                    ))}
-                </div>
-            </div>
-        </div>
-    );
+    const renderGame = () => {
+      const remainingSuspects = suspects.filter(s => s.probability > 0);
+      const isDownToTwo = remainingSuspects.length === 2;
+
+      return (
+        <div className="flex flex-col lg:flex-row gap-8">
+              <div className="lg:w-1/3 bg-white p-6 rounded-lg shadow-md">
+                  <h3 className="font-bold text-xl mb-4 border-b pb-2">Clues</h3>
+                  <ul className="space-y-3">
+                      {revealedClues.map(clue => (
+                          <li key={clue.id} className="text-gray-700 animate-fade-in-down">🕵️‍♂️ {clue.text}</li>
+                      ))}
+                      {revealedClues.length < gameClues.length && (
+                        <li className="text-gray-400">Next clue is waiting...</li>
+                      )}
+                  </ul>
+                  <div className="mt-6">
+                       <Button onClick={revealNextClue} disabled={isAccusationTime}>
+                          Reveal Next Clue
+                       </Button>
+                  </div>
+              </div>
+              <div className="lg:w-2/3">
+                  <h3 className="font-bold text-xl mb-4">{isAccusationTime ? 'Make Your Accusation!' : 'The Suspects'}</h3>
+                  
+                  {isDownToTwo && !isAccusationTime && (
+                    <div className="text-center mb-4 p-3 bg-blue-100 rounded-lg animate-fade-in border border-blue-200" role="alert">
+                        <p className="font-semibold text-blue-800">You've narrowed it down to two suspects! The final clue will be decisive.</p>
+                    </div>
+                  )}
+
+                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                      {suspects.map(s => (
+                          <div 
+                              key={s.id} 
+                              onClick={isAccusationTime ? () => makeAccusation(s) : undefined}
+                              className={`bg-white p-4 rounded-lg shadow-md transition-all duration-300 ${isAccusationTime ? 'cursor-pointer hover:shadow-xl hover:ring-2 hover:ring-red-500' : ''}`}
+                          >
+                              <div className="flex items-center space-x-4">
+                                  <span className="text-4xl">{s.avatar}</span>
+                                  <div>
+                                      <h4 className="font-bold">{s.name}</h4>
+                                      <p className="text-sm text-gray-500">Likelihood of Guilt</p>
+                                  </div>
+                              </div>
+                              <div className="w-full bg-gray-200 rounded-full h-4 mt-3">
+                                  <div 
+                                      className="bg-blue-500 h-4 rounded-full transition-all duration-1000 ease-out" 
+                                      style={{ width: `${s.probability * 100}%` }}
+                                  ></div>
+                              </div>
+                              <p className="text-right text-sm font-bold mt-1">{(s.probability * 100).toFixed(1)}%</p>
+                          </div>
+                      ))}
+                  </div>
+              </div>
+          </div>
+      );
+    }
 
     return (
         <div className="container mx-auto">

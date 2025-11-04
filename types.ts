@@ -48,6 +48,12 @@ export interface Suspect {
     attributes: Record<string, boolean | string>;
 }
 
+export interface ClueTemplate {
+    id: number;
+    attribute: string; 
+    texts: Record<string, string>;
+}
+
 export interface Clue {
     id: number;
     text: string;
@@ -60,7 +66,7 @@ export interface GameCase {
     title: string;
     story: string;
     suspects: Suspect[];
-    clues: Clue[];
+    clues: ClueTemplate[];
     guiltySuspectId: string;
 }
 
