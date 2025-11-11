@@ -30,12 +30,15 @@ const FindTheThief: React.FC<FindTheThiefProps> = ({ goBack, updatePoints, earnB
         // Deep copy the case to avoid mutating the constant
         const newCaseTemplate: GameCase = JSON.parse(JSON.stringify(GAME_CASES[0]));
 
-        // Randomly select a new guilty suspect
-        const guiltyIndex = Math.floor(Math.random() * newCaseTemplate.suspects.length);
-        const guiltySuspect = newCaseTemplate.suspects[guiltyIndex];
-        newCaseTemplate.guiltySuspectId = guiltySuspect.id;
+        // Find the guilty suspect from the template's predefined ID
+        const guiltySuspect = newCaseTemplate.suspects.find(s => s.id === newCaseTemplate.guiltySuspectId);
 
-        // Dynamically generate the clues for this game round
+        if (!guiltySuspect) {
+            console.error("Guilty suspect not found in the case data.");
+            return;
+        }
+
+        // Generate clues based on the fixed guilty suspect's attributes
         const preparedClues: Clue[] = newCaseTemplate.clues.map((clueTemplate: ClueTemplate) => {
             const expectedValue = guiltySuspect.attributes[clueTemplate.attribute];
             const clueText = clueTemplate.texts[String(expectedValue)];
